@@ -1,7 +1,11 @@
+#include <ctime>
+#include <fstream>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 static int langueActuelle = 1;
 
@@ -20,16 +24,68 @@ static double readAmount(const std::string& prompt) {
     }
 }
 
+static std::string now() {
+    std::time_t t = std::time(nullptr);
+    char buf[20];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+    return buf;
+}
+
+struct Transaction {
+    std::string date;
+    std::string type;
+    double montant;
+    double solde;
+};
+
+static void appendCSV(const Transaction& tx, const std::string& path) {
+    std::ofstream f(path, std::ios::app);
+    if (!f) return;
+    f << tx.date << "," << tx.type << "," << tx.montant << "," << tx.solde << "\n";
+}
+
+static std::vector<Transaction> loadCSV(const std::string& path) {
+    std::vector<Transaction> hist;
+    std::ifstream f(path);
+    if (!f) return hist;
+
+    std::string line;
+    while (std::getline(f, line)) {
+        std::istringstream ss(line);
+        Transaction tx;
+        std::string montant, solde;
+        if (!std::getline(ss, tx.date,   ',')) continue;
+        if (!std::getline(ss, tx.type,   ',')) continue;
+        if (!std::getline(ss, montant,   ',')) continue;
+        if (!std::getline(ss, solde,     ',')) continue;
+        try {
+            tx.montant = std::stod(montant);
+            tx.solde   = std::stod(solde);
+        } catch (...) { continue; }
+        hist.push_back(tx);
+    }
+    return hist;
+}
+
 class CompteBancaire {
     std::string titulaire;
     double solde;
+    std::string csvPath;
+    std::vector<Transaction> historique;
+
+    void log(const std::string& type, double montant) {
+        Transaction tx{ now(), type, montant, solde };
+        historique.push_back(tx);
+        appendCSV(tx, csvPath);
+    }
 
 public:
-    CompteBancaire(std::string nom, double initial)
-        : titulaire(std::move(nom)), solde(initial)
+    CompteBancaire(std::string nom, double initial, std::string path = "historique.csv")
+        : titulaire(std::move(nom)), solde(initial), csvPath(std::move(path))
     {
         if (initial < 0.0)
             throw std::invalid_argument(txt("Solde initial negatif refuse.", "Tsy azo ekena ny ambiny voalohany ratsy."));
+        historique = loadCSV(csvPath);
         std::cout << txt("Compte ouvert : ", "ny kaonty misokatra : ") << titulaire << "\n";
     }
 
@@ -38,17 +94,34 @@ public:
     double getSolde() const { return solde; }
     const std::string& getTitulaire() const { return titulaire; }
 
-    void deposer(double montant) {
+    void deposer(double montant, const std::string& type = "DEPOT") {
         if (montant <= 0.0) { std::cout << txt("Montant invalide.\n", "Vola tsy mety.\n"); return; }
         solde += montant;
         std::cout << "+ " << montant << " Ariary  =>  " << solde << " Ariary\n";
+        log(type, montant);
     }
 
     void retirer(double montant) {
         if (montant <= 0.0) { std::cout << txt("Montant invalide.\n", "Vola tsy mety.\n"); return; }
-        if (montant > solde) { std::cout << txt("Solde insuffisant (", "Tsy ampy ny ambiny (") << solde << txt(" Ariary).\n", " Ariary).\n"); return; }
+        if (montant > solde) {
+            std::cout << txt("Solde insuffisant (", "Tsy ampy ny ambiny (")
+                      << solde << txt(" Ariary).\n", " Ariary).\n");
+            return;
+        }
         solde -= montant;
         std::cout << "- " << montant << " Ariary  =>  " << solde << " Ariary\n";
+        log("RETRAIT", montant);
+    }
+
+    void afficherHistorique() const {
+        if (historique.empty()) {
+            std::cout << txt("Aucune transaction enregistree.\n", "Tsy misy ara-bola voarakitra.\n");
+            return;
+        }
+        std::cout << "\n";
+        for (const auto& tx : historique)
+            std::cout << tx.date << "  " << tx.type << "  "
+                      << tx.montant << " Ariary  =>  " << tx.solde << " Ariary\n";
     }
 
     virtual void afficherType() const {
@@ -66,8 +139,8 @@ class CompteEpargne : public CompteBancaire {
     double taux;
 
 public:
-    CompteEpargne(std::string nom, double initial, double taux)
-        : CompteBancaire(std::move(nom), initial), taux(taux)
+    CompteEpargne(std::string nom, double initial, double taux, std::string path = "historique.csv")
+        : CompteBancaire(std::move(nom), initial, std::move(path)), taux(taux)
     {
         if (this->taux < 0.0)
             throw std::invalid_argument(txt("Taux negatif refuse.", "Tsy azo ekena ny tahan'ny zanabola ratsy."));
@@ -75,21 +148,18 @@ public:
     }
 
     void appliquerInterets() {
-        deposer(getSolde() * taux / 100.0);
+        deposer(getSolde() * taux / 100.0, "INTERET");
     }
 
     void afficherType() const override {
-        std::cout << txt("Compte epargne  (taux : ", "Kaonty fitahirizana  (tahan'ny zanabola : ") << taux << "%)\n";
+        std::cout << txt("Compte epargne  (taux : ", "Kaonty fitahirizana  (tahan'ny zanabola : ")
+                  << taux << "%)\n";
     }
 };
 
 int main() {
     int choixLangue;
-
-    std::cout << "Choisir la langue / Safidy fiteny\n";
-    std::cout << "1. Francais\n";
-    std::cout << "2. Malagasy\n";
-    std::cout << "> ";
+    std::cout << "Choisir la langue / Safidy fiteny\n1. Francais\n2. Malagasy\n> ";
 
     if (!(std::cin >> choixLangue)) {
         std::cin.clear();
@@ -98,11 +168,7 @@ int main() {
         return 1;
     }
 
-    if (choixLangue == 2) {
-        langueActuelle = 2;
-    } else {
-        langueActuelle = 1;
-    }
+    langueActuelle = (choixLangue == 2) ? 2 : 1;
 
     try {
         CompteEpargne compte("Ahmed Benali", 50000.0, 3.5);
@@ -112,11 +178,12 @@ int main() {
 
         while (actif) {
             std::cout << "\n"
-                      << txt("1. Infos", "1. Fampahalalana") << "   "
-                      << txt("2. Depot", "2. Fampidiram-bola") << "   "
-                      << txt("3. Retrait", "3. Fanesorana") << "   "
-                      << txt("4. Interets", "4. Zanabola") << "   "
-                      << txt("5. Quitter", "5. Hiala") << "\n> ";
+                      << txt("1. Infos",      "1. Fampahafantarana")  << "   "
+                      << txt("2. Depot",      "2. Hampiditra vola")<< "   "
+                      << txt("3. Retrait",    "3. Haka vola")     << "   "
+                      << txt("4. Interets",   "4. Zanabola")       << "   "
+                      << txt("5. Historique", "5. fifanakalozana farany")        << "   "
+                      << txt("6. Quitter",    "6. Hivoaka")          << "\n> ";
 
             if (!(std::cin >> choix)) {
                 std::cin.clear();
@@ -126,12 +193,13 @@ int main() {
             }
 
             switch (choix) {
-                case 1: compte.afficher(); break;
-                case 2: compte.deposer(readAmount(txt("Montant : ", "Vola : ")));  break;
-                case 3: compte.retirer(readAmount(txt("Montant : ", "Vola : ")));  break;
-                case 4: compte.appliquerInterets(); break;
-                case 5: actif = false; break;
-                default: std::cout << txt("Choix hors plage (1-5).\n", "Safidy ivelan'ny faritra (1-5).\n");
+                case 1: compte.afficher();                                              break;
+                case 2: compte.deposer(readAmount(txt("Montant : ", "Vola : ")));      break;
+                case 3: compte.retirer(readAmount(txt("Montant : ", "Vola : ")));      break;
+                case 4: compte.appliquerInterets();                                     break;
+                case 5: compte.afficherHistorique();                                    break;
+                case 6: actif = false;                                                  break;
+                default: std::cout << txt("Choix hors plage (1-6).\n", "Safidy ivelan'ny fetra (1-6).\n");
             }
         }
 
