@@ -30,7 +30,7 @@ public:
     {
         if (initial < 0.0)
             throw std::invalid_argument(txt("Solde initial negatif refuse.", "Tsy azo ekena ny ambiny voalohany ratsy."));
-        std::cout << txt("Compte ouvert : ", "Nokatona ny kaonty : ") << titulaire << "\n";
+        std::cout << txt("Compte ouvert : ", "ny kaonty misokatra : ") << titulaire << "\n";
     }
 
     virtual ~CompteBancaire() = default;
@@ -41,14 +41,14 @@ public:
     void deposer(double montant) {
         if (montant <= 0.0) { std::cout << txt("Montant invalide.\n", "Vola tsy mety.\n"); return; }
         solde += montant;
-        std::cout << "+ " << montant << " DZD  =>  " << solde << " DZD\n";
+        std::cout << "+ " << montant << " Ariary  =>  " << solde << " Ariary\n";
     }
 
     void retirer(double montant) {
         if (montant <= 0.0) { std::cout << txt("Montant invalide.\n", "Vola tsy mety.\n"); return; }
-        if (montant > solde) { std::cout << txt("Solde insuffisant (", "Tsy ampy ny ambiny (") << solde << txt(" DZD).\n", " DZD).\n"); return; }
+        if (montant > solde) { std::cout << txt("Solde insuffisant (", "Tsy ampy ny ambiny (") << solde << txt(" Ariary).\n", " Ariary).\n"); return; }
         solde -= montant;
-        std::cout << "- " << montant << " DZD  =>  " << solde << " DZD\n";
+        std::cout << "- " << montant << " Ariary  =>  " << solde << " Ariary\n";
     }
 
     virtual void afficherType() const {
@@ -57,7 +57,7 @@ public:
 
     void afficher() const {
         std::cout << "\n" << txt("Titulaire : ", "Tompon-kaonty : ") << titulaire
-                  << "\n" << txt("Solde     : ", "Ambiny    : ") << solde << " DZD\n";
+                  << "\n" << txt("Solde     : ", "Ambiny    : ") << solde << " Ariary\n";
         afficherType();
     }
 };
@@ -126,16 +126,16 @@ int main() {
             }
 
             switch (choix) {
-                case 1: compte.afficher();                          break;
+                case 1: compte.afficher(); break;
                 case 2: compte.deposer(readAmount(txt("Montant : ", "Vola : ")));  break;
                 case 3: compte.retirer(readAmount(txt("Montant : ", "Vola : ")));  break;
-                case 4: compte.appliquerInterets();                break;
-                case 5: actif = false;                             break;
+                case 4: compte.appliquerInterets(); break;
+                case 5: actif = false; break;
                 default: std::cout << txt("Choix hors plage (1-5).\n", "Safidy ivelan'ny faritra (1-5).\n");
             }
         }
 
-        std::cout << "\n" << txt("Merci d'avoir utilise notre ATM. Au revoir !", "Misaotra nandray ny ATM anay. Veloma !") << "\n";
+        std::cout << "\n" << txt("Merci d'avoir utilise notre ATM. Au revoir !", "Misaotra nampiasa ny ATM anay. Veloma !") << "\n";
 
     } catch (const std::exception& e) {
         std::cerr << txt("Erreur : ", "Hadisoana : ") << e.what() << "\n";
