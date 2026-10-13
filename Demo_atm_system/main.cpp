@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -10,15 +11,6 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
-
-namespace ansi {
-    const std::string rst  = "\033[0m";
-    const std::string bold = "\033[1m";
-    const std::string red  = "\033[31m";
-    const std::string grn  = "\033[32m";
-    const std::string yel  = "\033[33m";
-    const std::string cyn  = "\033[36m";
-}
 
 static void enableAnsi() {
 #ifdef _WIN32
@@ -36,8 +28,48 @@ static std::string txt(const std::string& fr, const std::string& mg) {
     return langueActuelle == 2 ? mg : fr;
 }
 
-static const int W = 58;
+static double readAmount(const std::string& prompt) {
+    double v;
+    while (true) {
+        std::cout << prompt;
+        if (std::cin >> v) return v;
+        std::cout << txt("Valeur invalide, reessayez.\n", "Tsy mety ny sanda, andramo indray.\n");
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+}
 
+static std::string now() {
+    std::time_t t = std::time(nullptr);
+    char buf[20];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+    return buf;
+}
+
+static std::string fmtNum(double v) {
+    std::string s = std::to_string((long long)v);
+    for (int i = (int)s.size() - 3; i > 0; i -= 3)
+        s.insert(i, " ");
+    return s;
+}
+
+static std::string rep(const std::string& s, int n) {
+    std::string r;
+    r.reserve(s.size() * n);
+    for (int i = 0; i < n; ++i) r += s;
+    return r;
+}
+
+namespace ansi {
+    const std::string rst  = "\033[0m";
+    const std::string bold = "\033[1m";
+    const std::string red  = "\033[31m";
+    const std::string grn  = "\033[32m";
+    const std::string yel  = "\033[33m";
+    const std::string cyn  = "\033[36m";
+}
+
+static const int W = 58;
 static void cls() { std::cout << "\033[2J\033[H" << std::flush; }
 
 static int visLen(const std::string& s) {
@@ -56,28 +88,14 @@ static std::string fit(const std::string& s, int w) {
     return vl >= w ? s : s + std::string(w - vl, ' ');
 }
 
-static std::string fmtNum(double v) {
-    std::string s = std::to_string((long long)v);
-    for (int i = (int)s.size() - 3; i > 0; i -= 3)
-        s.insert(i, " ");
-    return s;
-}
-
-static std::string rep(const std::string& s, int n) {
-    std::string r;
-    r.reserve(s.size() * n);
-    for (int i = 0; i < n; ++i) r += s;
-    return r;
-}
-
-static void top() { std::cout << ansi::cyn << "╔" << rep("═", W) << "╗\n" << ansi::rst; }
-static void bot() { std::cout << ansi::cyn << "╚" << rep("═", W) << "╝\n" << ansi::rst; }
-static void sep() { std::cout << ansi::cyn << "╠" << rep("═", W) << "╣\n" << ansi::rst; }
+static void top() { std::cout << ansi::cyn << "\xe2\x95\x94" << rep("\xe2\x95\x90", W) << "\xe2\x95\x97\n" << ansi::rst; }
+static void bot() { std::cout << ansi::cyn << "\xe2\x95\x9a" << rep("\xe2\x95\x90", W) << "\xe2\x95\x9d\n" << ansi::rst; }
+static void sep() { std::cout << ansi::cyn << "\xe2\x95\xa0" << rep("\xe2\x95\x90", W) << "\xe2\x95\xa3\n" << ansi::rst; }
 
 static void row(const std::string& s, const std::string& clr = "") {
-    std::cout << ansi::cyn << "║ " << ansi::rst
+    std::cout << ansi::cyn << "\xe2\x95\x91 " << ansi::rst
               << clr << fit(s, W - 2) << ansi::rst
-              << ansi::cyn << " ║\n" << ansi::rst;
+              << ansi::cyn << " \xe2\x95\x91\n" << ansi::rst;
 }
 
 static void cRow(const std::string& s, const std::string& clr = "") {
@@ -85,11 +103,9 @@ static void cRow(const std::string& s, const std::string& clr = "") {
     row(std::string(p, ' ') + s, clr);
 }
 
-static std::string now() {
-    std::time_t t = std::time(nullptr);
-    char buf[20];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
-    return buf;
+static void waitEnter() {
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::cin.get();
 }
 
 struct Transaction { std::string date, type; double montant, solde; };
@@ -109,7 +125,7 @@ static std::vector<Transaction> loadCSV(const std::string& path) {
         std::istringstream ss(line);
         Transaction tx; std::string m, s;
         if (!std::getline(ss, tx.date, ',') || !std::getline(ss, tx.type, ',') ||
-            !std::getline(ss, m, ',')       || !std::getline(ss, s, ',')) continue;
+            !std::getline(ss, m, ',')        || !std::getline(ss, s, ',')) continue;
         try { tx.montant = std::stod(m); tx.solde = std::stod(s); }
         catch (...) { continue; }
         h.push_back(tx);
@@ -132,13 +148,13 @@ class CompteBancaire {
 public:
     CompteBancaire(std::string nom, double initial,
                    double sMin = 0.0, double limSess = 0.0,
-                   std::string path = "historique.csv")
+                   std::string path = "")
         : titulaire(std::move(nom)), solde(initial),
           soldeMin(sMin), limiteSession(limSess),
-          retraitSession(0.0), csvPath(std::move(path))
+          retraitSession(0.0),
+          csvPath(path.empty() ? titulaire + ".csv" : path)
     {
         if (initial < 0.0) throw std::invalid_argument("Solde initial negatif.");
-        if (sMin    < 0.0) throw std::invalid_argument("Solde minimum negatif.");
         if (limSess < 0.0) throw std::invalid_argument("Limite session negative.");
         historique = loadCSV(csvPath);
     }
@@ -149,12 +165,12 @@ public:
     double getSoldeMin()       const { return soldeMin; }
     double getLimiteSession()  const { return limiteSession; }
     double getRetraitSession() const { return retraitSession; }
-    const std::string&              getTitulaire()  const { return titulaire; }
+    const std::string& getTitulaire()               const { return titulaire; }
     const std::vector<Transaction>& getHistorique() const { return historique; }
 
-    virtual std::string getType() const {
-        return txt("Compte standard", "Kaonty mahazatra");
-    }
+    virtual std::string getType()        const { return txt("Compte standard", "Kaonty mahazatra"); }
+    virtual bool supporteInterets()      const { return false; }
+    virtual OpResult appliquerInterets()       { return {false, "Non applicable."}; }
 
     OpResult deposer(double montant, const std::string& type = "DEPOT") {
         if (montant <= 0.0) return {false, txt("Montant invalide.", "Vola tsy mety.")};
@@ -183,47 +199,85 @@ class CompteEpargne : public CompteBancaire {
     double taux;
 
 public:
-    CompteEpargne(std::string nom, double initial, double taux,
-                  double sMin = 0.0, double limSess = 0.0,
-                  std::string path = "historique.csv")
-        : CompteBancaire(std::move(nom), initial, sMin, limSess, std::move(path)),
-          taux(taux)
+    CompteEpargne(std::string nom, double initial, double t,
+                  double sMin = 0.0, double limSess = 0.0)
+        : CompteBancaire(std::move(nom), initial, sMin, limSess), taux(t)
     {
-        if (this->taux < 0.0) throw std::invalid_argument("Taux negatif.");
+        if (taux < 0.0) throw std::invalid_argument("Taux negatif.");
     }
 
     std::string getType() const override {
         std::ostringstream os;
-        os << txt("Compte epargne  (taux : ", "Kaonty fitahirizana (") << taux << "%)";
+        os << txt("Epargne (taux:", "Fitahirizana (") << taux << "%)";
         return os.str();
     }
 
-    OpResult appliquerInterets() {
+    bool supporteInterets()      const override { return true; }
+    OpResult appliquerInterets()       override {
         return deposer(getSolde() * taux / 100.0, "INTERET");
+    }
+};
+
+class CompteVue : public CompteBancaire {
+    double decouvertMax;
+
+public:
+    CompteVue(std::string nom, double initial, double decouvert = 0.0)
+        : CompteBancaire(std::move(nom), initial, -decouvert), decouvertMax(decouvert)
+    {}
+
+    std::string getType() const override {
+        std::ostringstream os;
+        if (decouvertMax > 0.0)
+            os << txt("Vue (dec:", "Mahazatra (") << fmtNum(decouvertMax) << " Ar)";
+        else
+            os << txt("Vue", "Mahazatra");
+        return os.str();
     }
 };
 
 struct Status { std::string msg; bool err = false; };
 
-static void waitEnter() {
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    std::cin.get();
-}
+static int selectCompte(const std::vector<std::unique_ptr<CompteBancaire>>& comptes) {
+    int wNom = 4, wType = 4;
+    for (const auto& cp : comptes) {
+        wNom  = std::max(wNom,  (int)cp->getTitulaire().size());
+        wType = std::max(wType, visLen(cp->getType()));
+    }
+    int budget = W - 2 - 6 - 12;
+    if (wNom + wType + 2 > budget) {
+        wType = budget / 2;
+        wNom  = budget - wType;
+    }
 
-static double readAmount(const std::string& prompt) {
-    double v;
+    cls(); top();
+    cRow(txt("SELECTION DU COMPTE", "FIFIDIANANA KAONTY"), ansi::bold + ansi::cyn);
+    sep();
+    for (int i = 0; i < (int)comptes.size(); ++i) {
+        const auto& c = *comptes[i];
+        std::string line = "  [" + std::to_string(i + 1) + "] "
+            + fit(c.getTitulaire(), wNom + 1)
+            + fit(c.getType(),      wType + 1)
+            + ansi::grn + fmtNum(c.getSolde()) + " Ar" + ansi::rst;
+        row(line);
+    }
+    sep(); bot();
+
+    int choix;
     while (true) {
-        std::cout << "\n" << ansi::yel << "> " << ansi::rst << prompt;
-        if (std::cin >> v) return v;
-        std::cout << txt("Valeur invalide, reessayez.\n", "Tsy mety ny sanda, andramo indray.\n");
+        std::cout << "\n" << ansi::yel << "> "
+                  << txt("Choisir un compte (1-", "Safidio kaonty (1-")
+                  << comptes.size() << ") : " << ansi::rst;
+        if (std::cin >> choix && choix >= 1 && choix <= (int)comptes.size())
+            return choix - 1;
         std::cin.clear();
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cout << txt("Choix invalide.\n", "Safidy tsy mety.\n");
     }
 }
 
-static void showMenu(const CompteEpargne& c, const Status& st = {}) {
-    cls();
-    top();
+static void showMenu(const CompteBancaire& c, const Status& st = {}) {
+    cls(); top();
     cRow(txt("SYSTEME ATM  v1.0", "RAFI-BOLA ATM  v1.0"), ansi::bold + ansi::cyn);
     sep();
     row(" " + txt("Titulaire : ", "Tompon-kaonty : ") + c.getTitulaire());
@@ -234,28 +288,30 @@ static void showMenu(const CompteEpargne& c, const Status& st = {}) {
         row(" " + txt("Session   : ", "Fotoana       : ")
                 + fmtNum(c.getRetraitSession()) + " / " + fmtNum(c.getLimiteSession()) + " Ariary");
     sep();
-    row("  " + txt("[1] Infos        [2] Depot        [3] Retrait",
-                   "[1] Fampahalalana  [2] Ampiditra   [3] Nesorana"));
-    row("  " + txt("[4] Interets     [5] Historique   [6] Quitter",
-                   "[4] Zanabola     [5] Tantara      [6] Hiala   "));
+    row("  " + txt("[1] Infos   [2] Depot   [3] Retrait",
+                   "[1] Fampahalalana  [2] Ampiditra  [3] Nesorana"));
+    if (c.supporteInterets())
+        row("  " + txt("[4] Interets   [5] Historique   [6] Changer   [7] Quitter",
+                       "[4] Zanabola   [5] Tantara      [6] Hanova    [7] Hiala"));
+    else
+        row("  " + txt("[5] Historique   [6] Changer compte   [7] Quitter",
+                       "[5] Tantara      [6] Hanova kaonty    [7] Hiala"));
     sep();
     row("  " + st.msg, st.err ? ansi::red : ansi::grn);
     bot();
     std::cout << "\n" << ansi::yel << "> " << txt("Votre choix : ", "Safidio : ") << ansi::rst;
 }
 
-static void showInfo(const CompteEpargne& c) {
-    cls();
-    top();
+static void showInfo(const CompteBancaire& c) {
+    cls(); top();
     cRow(txt("DETAILS DU COMPTE", "ANTSIPIRIHANA NY KAONTY"), ansi::bold + ansi::cyn);
     sep();
-    row(" " + txt("Titulaire    : ", "Tompon-kaonty : ") + c.getTitulaire());
-    row(" " + txt("Solde        : ", "Ambiny        : ")
+    row(" " + txt("Titulaire : ", "Tompon-kaonty : ") + c.getTitulaire());
+    row(" " + txt("Solde     : ", "Ambiny        : ")
             + ansi::grn + ansi::bold + fmtNum(c.getSolde()) + " Ariary" + ansi::rst);
-    row(" " + txt("Solde min    : ", "Ambiny kely   : ") + fmtNum(c.getSoldeMin()) + " Ariary");
-    row(" " + txt("Type         : ", "Kaonty        : ") + c.getType());
+    row(" " + txt("Type      : ", "Kaonty        : ") + c.getType());
     if (c.getLimiteSession() > 0.0)
-        row(" " + txt("Plafond sess : ", "Fetra fotoana : ")
+        row(" " + txt("Session   : ", "Fotoana       : ")
                 + fmtNum(c.getRetraitSession()) + " / " + fmtNum(c.getLimiteSession()) + " Ariary");
     sep();
     row("  " + txt("[ Entree pour revenir ]", "[ Entree hanohy ]"), ansi::yel);
@@ -263,25 +319,23 @@ static void showInfo(const CompteEpargne& c) {
     waitEnter();
 }
 
-static void printHistory(const CompteEpargne& c) {
-    cls();
-    top();
+static void printHistory(const CompteBancaire& c) {
+    cls(); top();
     cRow(txt("HISTORIQUE DES TRANSACTIONS", "TANTARA NY ARA-BOLA"), ansi::bold + ansi::cyn);
     sep();
     const auto& hist = c.getHistorique();
     if (hist.empty()) {
-        row("  " + txt("Aucune transaction enregistree.", "Tsy misy tantara voarakitra."), ansi::yel);
+        row("  " + txt("Aucune transaction.", "Tsy misy tantara."), ansi::yel);
     } else {
         row("  " + fit("DATE", 21) + fit("TYPE", 9) + fit("MONTANT", 12) + "SOLDE", ansi::bold);
         sep();
         int from = std::max(0, (int)hist.size() - 10);
         for (int i = from; i < (int)hist.size(); ++i) {
             const auto& tx = hist[i];
-            const std::string& clr = (tx.type == "RETRAIT") ? ansi::red : ansi::grn;
-            row("  " + fit(tx.date, 21) +
-                       fit(tx.type, 9)  +
+            const std::string& clr = tx.type == "RETRAIT" ? ansi::red : ansi::grn;
+            row("  " + fit(tx.date, 21) + fit(tx.type, 9) +
                        fit(fmtNum(tx.montant) + " Ar", 12) +
-                       fmtNum(tx.solde) + " Ariary", clr);
+                       fmtNum(tx.solde) + " Ar", clr);
         }
     }
     sep();
@@ -293,28 +347,26 @@ static void printHistory(const CompteEpargne& c) {
 int main() {
     enableAnsi();
 
-    cls();
-    top();
-    cRow("SYSTEME ATM  v1.0", ansi::bold + ansi::cyn);
-    sep();
-    row("  Choisir la langue / Safidy fiteny");
-    row("    1.  Francais");
-    row("    2.  Malagasy");
-    bot();
-    std::cout << "\n" << ansi::yel << "> " << ansi::rst;
-
+    std::cout << "Choisir la langue / Safidy fiteny\n1. Francais\n2. Malagasy\n> ";
     int choixLangue;
     if (!(std::cin >> choixLangue)) { std::cerr << "Erreur.\n"; return 1; }
     langueActuelle = (choixLangue == 2) ? 2 : 1;
 
     try {
-        CompteEpargne compte("Ahmed Benali", 50000.0, 3.5, 10000.0, 20000.0);
+        std::vector<std::unique_ptr<CompteBancaire>> comptes;
+        comptes.push_back(std::make_unique<CompteEpargne>("Ahmed Benali",  50000.0, 3.5, 10000.0, 20000.0));
+        comptes.push_back(std::make_unique<CompteEpargne>("Soa Rakoto",   120000.0, 2.8,  5000.0,  0.0));
+        comptes.push_back(std::make_unique<CompteVue>("Hery Andriamaro",   8500.0, 2000.0));
+
+        int idx = selectCompte(comptes);
+        CompteBancaire* c = comptes[idx].get();
+
         Status st;
         int choix;
         bool actif = true;
 
         while (actif) {
-            showMenu(compte, st);
+            showMenu(*c, st);
             st = {};
 
             if (!(std::cin >> choix)) {
@@ -325,26 +377,34 @@ int main() {
             }
 
             switch (choix) {
-                case 1: showInfo(compte); break;
+                case 1: showInfo(*c); break;
                 case 2: {
-                    auto res = compte.deposer(readAmount(txt("Montant (Ariary) : ", "Vola (Ariary) : ")));
+                    auto res = c->deposer(readAmount(txt("Montant (Ariary) : ", "Vola (Ariary) : ")));
                     st = {res.msg, !res.ok};
                     break;
                 }
                 case 3: {
-                    auto res = compte.retirer(readAmount(txt("Montant (Ariary) : ", "Vola (Ariary) : ")));
+                    auto res = c->retirer(readAmount(txt("Montant (Ariary) : ", "Vola (Ariary) : ")));
                     st = {res.msg, !res.ok};
                     break;
                 }
-                case 4: { auto res = compte.appliquerInterets(); st = {res.msg, !res.ok}; break; }
-                case 5: printHistory(compte); break;
-                case 6: actif = false; break;
-                default: st = {txt("Choix hors plage (1-6).", "Safidy ivelan'ny faritra (1-6)."), true};
+                case 4: {
+                    auto res = c->appliquerInterets();
+                    st = {res.msg, !res.ok};
+                    break;
+                }
+                case 5: printHistory(*c); break;
+                case 6:
+                    idx = selectCompte(comptes);
+                    c   = comptes[idx].get();
+                    break;
+                case 7: actif = false; break;
+                default:
+                    st = {txt("Choix hors plage.", "Safidy ivelan'ny faritra."), true};
             }
         }
 
-        cls();
-        top();
+        cls(); top();
         row("");
         cRow(txt("Merci d'avoir utilise notre ATM !", "Misaotra nampiasa ny ATM anay !"), ansi::grn + ansi::bold);
         cRow(txt("Au revoir !", "Veloma !"), ansi::grn);
