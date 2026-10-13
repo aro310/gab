@@ -6,7 +6,7 @@ ApplicationWindow {
     width: 420
     height: 780
     minimumWidth: 360
-    minimumHeight: 640
+    minimumHeight: 700
     visible: true
     title: "ATM"
 

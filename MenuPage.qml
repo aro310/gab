@@ -83,7 +83,7 @@ Item {
     Rectangle {
         id: header
         anchors { top: parent.top; left: parent.left; right: parent.right }
-        height: Math.round(page.height * 0.40)
+        height: Math.max(320, Math.round(page.height * 0.52))
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#1E3A8A" }
             GradientStop { position: 1.0; color: "#3B82F6" }
@@ -122,7 +122,7 @@ Item {
         Column {
             anchors {
                 left: parent.left; leftMargin: 22
-                top: parent.top; topMargin: Math.round(header.height * 0.28)
+                top: parent.top; topMargin: 62
             }
             spacing: 4
 
@@ -233,7 +233,7 @@ Item {
         anchors {
             top: header.bottom; topMargin: -22
             left: parent.left; right: parent.right
-            bottom: bottomNav.top
+            bottom: bottomNav.top; bottomMargin: 6
         }
         radius: 22
         color: "white"
