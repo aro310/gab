@@ -461,7 +461,26 @@ int main() {
     langueActuelle = (choixLangue == 2) ? 2 : 1;
 
     try {
-        CompteEpargne compte("Ahmed Benali", 50000.0, 3.5, 10000.0, 20000.0);
+        // Authentification carte + PIN
+        if (!authentifier()) {
+            cls(); top();
+            row("");
+            cRow(txt("Carte bloquee : trop d'essais.", "Voasakana ny karatra : be loatra ny ezaka."),
+                 ansi::red + ansi::bold);
+            row("");
+            bot();
+            return 1;
+        }
+        showWelcome("Aro");
+
+        // Comptes de l'utilisateur
+        std::vector<std::unique_ptr<CompteBancaire>> comptes;
+        comptes.push_back(std::make_unique<CompteEpargne>("Aro", 50000.0, 3.5, 10000.0, 20000.0));
+        comptes.push_back(std::make_unique<CompteVue>("Aro Courant", 80000.0, 20000.0));
+
+        int idx = selectCompte(comptes);
+        CompteBancaire* c = comptes[idx].get();
+
         Status st;
         int choix;
         bool actif = true;
