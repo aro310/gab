@@ -1,0 +1,20 @@
+[
+  {
+    "type"       : "epargne",
+    "titulaire"  : "Aro",
+    "solde"      : 50000,
+    "soldeMin"   : 10000,
+    "limSession" : 20000,
+    "taux"       : 3.5,
+    "decouvert"  : 0
+  },
+  {
+    "type"       : "vue",
+    "titulaire"  : "Aro Courant",
+    "solde"      : 80000,
+    "soldeMin"   : -20000,
+    "limSession" : 0,
+    "taux"       : 0,
+    "decouvert"  : 20000
+  }
+]

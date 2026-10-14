@@ -1,0 +1,2 @@
+Client existant : carte 4532123456789010 · PIN 1234
+Administrateur : code GAB-ADMIN · PIN 0000

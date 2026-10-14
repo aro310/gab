@@ -1,0 +1,14 @@
+[
+  {
+    "carte" : "4532123456789010",
+    "pin"   : "1234",
+    "nom"   : "Aro",
+    "comptes" : ["Aro","Aro Courant"]
+  },
+  {
+    "carte" : "1234567890123456",
+    "pin"   : "0000",
+    "nom"   : "najoro",
+    "comptes" : ["Aro Courant"]
+  }
+]
