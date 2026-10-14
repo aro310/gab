@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QUrl>
 #include "AtmBridge.hpp"
 
 int main(int argc, char* argv[]) {
@@ -10,8 +11,8 @@ int main(int argc, char* argv[]) {
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("atm", &bridge);
-    engine.loadFromModule("AtmApp", "Main");
-
+    engine.load(QUrl(QStringLiteral("qrc:/AtmApp/Main.qml")));
+    
     if (engine.rootObjects().isEmpty())
         return 1;
 

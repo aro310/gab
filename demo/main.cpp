@@ -1,213 +1,361 @@
-/*
- * =============================================
- *   SYSTEME ATM - Programmation Orientee Objet
- *   Langage : C++
- *   Niveau  : Debutant
- * =============================================
- *
- *  Concepts POO couverts :
- *   1. Encapsulation  (attributs prives + getters/setters)
- *   2. Constructeur   (initialisation d'un objet)
- *   3. Destructeur    (liberation de l'objet)
- *   4. Heritage       (CompteEpargne herite de CompteBancaire)
- *   5. Polymorphisme  (methode virtuelle afficherType())
- */
-
+#include <ctime>
+#include <fstream>
 #include <iostream>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
 #include <string>
-using namespace std;
+#include <vector>
 
-// ================================================================
-// CLASSE DE BASE : CompteBancaire
-// ================================================================
-// Represente un compte bancaire generique.
-// On utilise "private" pour proteger les donnees sensibles.
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+namespace ansi {
+    const std::string rst  = "\033[0m";
+    const std::string bold = "\033[1m";
+    const std::string red  = "\033[31m";
+    const std::string grn  = "\033[32m";
+    const std::string yel  = "\033[33m";
+    const std::string cyn  = "\033[36m";
+}
+
+static void enableAnsi() {
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD m;
+    GetConsoleMode(h, &m);
+    SetConsoleMode(h, m | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+#endif
+}
+
+static int langueActuelle = 1;
+static std::string txt(const std::string& fr, const std::string& mg) {
+    return langueActuelle == 2 ? mg : fr;
+}
+
+static const int W = 58;
+
+static void cls() { std::cout << "\033[2J\033[H" << std::flush; }
+
+static int visLen(const std::string& s) {
+    int n = 0;
+    bool esc = false;
+    for (unsigned char c : s) {
+        if (c == '\033')         { esc = true;  continue; }
+        if (esc)                 { if (c == 'm') esc = false; continue; }
+        if ((c & 0xC0) != 0x80) ++n;
+    }
+    return n;
+}
+
+static std::string fit(const std::string& s, int w) {
+    int vl = visLen(s);
+    return vl >= w ? s : s + std::string(w - vl, ' ');
+}
+
+static std::string fmtNum(double v) {
+    std::string s = std::to_string((long long)v);
+    for (int i = (int)s.size() - 3; i > 0; i -= 3)
+        s.insert(i, " ");
+    return s;
+}
+
+static std::string rep(const std::string& s, int n) {
+    std::string r;
+    r.reserve(s.size() * n);
+    for (int i = 0; i < n; ++i) r += s;
+    return r;
+}
+
+static void top() { std::cout << ansi::cyn << "╔" << rep("═", W) << "╗\n" << ansi::rst; }
+static void bot() { std::cout << ansi::cyn << "╚" << rep("═", W) << "╝\n" << ansi::rst; }
+static void sep() { std::cout << ansi::cyn << "╠" << rep("═", W) << "╣\n" << ansi::rst; }
+
+static void row(const std::string& s, const std::string& clr = "") {
+    std::cout << ansi::cyn << "║ " << ansi::rst
+              << clr << fit(s, W - 2) << ansi::rst
+              << ansi::cyn << " ║\n" << ansi::rst;
+}
+
+static void cRow(const std::string& s, const std::string& clr = "") {
+    int p = std::max(0, (W - 2 - visLen(s)) / 2);
+    row(std::string(p, ' ') + s, clr);
+}
+
+static std::string now() {
+    std::time_t t = std::time(nullptr);
+    char buf[20];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+    return buf;
+}
+
+struct Transaction { std::string date, type; double montant, solde; };
+struct OpResult    { bool ok; std::string msg; };
+
+static void appendCSV(const Transaction& tx, const std::string& path) {
+    std::ofstream f(path, std::ios::app);
+    if (f) f << tx.date << "," << tx.type << "," << tx.montant << "," << tx.solde << "\n";
+}
+
+static std::vector<Transaction> loadCSV(const std::string& path) {
+    std::vector<Transaction> h;
+    std::ifstream f(path);
+    if (!f) return h;
+    std::string line;
+    while (std::getline(f, line)) {
+        std::istringstream ss(line);
+        Transaction tx; std::string m, s;
+        if (!std::getline(ss, tx.date, ',') || !std::getline(ss, tx.type, ',') ||
+            !std::getline(ss, m, ',')       || !std::getline(ss, s, ',')) continue;
+        try { tx.montant = std::stod(m); tx.solde = std::stod(s); }
+        catch (...) { continue; }
+        h.push_back(tx);
+    }
+    return h;
+}
 
 class CompteBancaire {
+    std::string titulaire;
+    double solde, soldeMin, limiteSession, retraitSession;
+    std::string csvPath;
+    std::vector<Transaction> historique;
 
-    // -- Attributs prives (Encapsulation) --
-    // Ces donnees ne peuvent pas etre modifiees directement de l'exterieur.
-private:
-    string titulaire;   // Nom du proprietaire du compte
-    double solde;       // Solde actuel du compte
+    void log(const std::string& type, double montant) {
+        Transaction tx{ now(), type, montant, solde };
+        historique.push_back(tx);
+        appendCSV(tx, csvPath);
+    }
 
-    // -- Methodes publiques --
-    // Ce sont les seules facon d'interagir avec le compte.
 public:
-
-    // --- CONSTRUCTEUR ---
-    // Appele automatiquement quand on cree un objet.
-    // Il initialise le nom et le solde de depart.
-    CompteBancaire(string nom, double soldeInitial) {
-        titulaire = nom;
-        solde     = soldeInitial;
-        cout << "[INFO] Compte cree pour : " << titulaire << endl;
+    CompteBancaire(std::string nom, double initial,
+                   double sMin = 0.0, double limSess = 0.0,
+                   std::string path = "historique.csv")
+        : titulaire(std::move(nom)), solde(initial),
+          soldeMin(sMin), limiteSession(limSess),
+          retraitSession(0.0), csvPath(std::move(path))
+    {
+        if (initial < 0.0) throw std::invalid_argument("Solde initial negatif.");
+        if (sMin    < 0.0) throw std::invalid_argument("Solde minimum negatif.");
+        if (limSess < 0.0) throw std::invalid_argument("Limite session negative.");
+        historique = loadCSV(csvPath);
     }
 
-    // --- DESTRUCTEUR ---
-    // Appele automatiquement quand l'objet est detruit (fin du programme).
-    virtual ~CompteBancaire() {
-        cout << "[INFO] Compte de " << titulaire << " ferme." << endl;
+    virtual ~CompteBancaire() = default;
+
+    double getSolde()          const { return solde; }
+    double getSoldeMin()       const { return soldeMin; }
+    double getLimiteSession()  const { return limiteSession; }
+    double getRetraitSession() const { return retraitSession; }
+    const std::string&              getTitulaire()  const { return titulaire; }
+    const std::vector<Transaction>& getHistorique() const { return historique; }
+
+    virtual std::string getType() const {
+        return txt("Compte standard", "Kaonty mahazatra");
     }
 
-    // --- GETTER : lire le solde (lecture seule) ---
-    double getSolde() {
-        return solde;
-    }
-
-    // --- GETTER : lire le nom du titulaire ---
-    string getTitulaire() {
-        return titulaire;
-    }
-
-    // --- METHODE : Deposer de l'argent ---
-    void deposer(double montant) {
-        if (montant <= 0) {
-            cout << "[ERREUR] Le montant doit etre positif." << endl;
-            return;
-        }
+    OpResult deposer(double montant, const std::string& type = "DEPOT") {
+        if (montant <= 0.0) return {false, txt("Montant invalide.", "Vola tsy mety.")};
         solde += montant;
-        cout << "[OK] Depot de " << montant << " Ar effectue." << endl;
+        log(type, montant);
+        return {true, "+ " + fmtNum(montant) + txt(" Ariary credite.", " Ariary nampidirina.")};
     }
 
-    // --- METHODE : Retirer de l'argent ---
-    void retirer(double montant) {
-        if (montant <= 0) {
-            cout << "[ERREUR] Le montant doit etre positif." << endl;
-            return;
-        }
-        if (montant > solde) {
-            cout << "[ERREUR] Solde insuffisant ! Solde actuel : " << solde << " Ar" << endl;
-            return;
-        }
+    OpResult retirer(double montant) {
+        if (montant <= 0.0)
+            return {false, txt("Montant invalide.", "Vola tsy mety.")};
+        if (montant > solde)
+            return {false, txt("Solde insuffisant (", "Tsy ampy (") + fmtNum(solde) + " Ariary)."};
+        if ((solde - montant) < soldeMin)
+            return {false, txt("Solde min requis : ", "Ambiny kely : ") + fmtNum(soldeMin) + " Ariary."};
+        if (limiteSession > 0.0 && (retraitSession + montant) > limiteSession)
+            return {false, txt("Limite session : ", "Fetra fotoana : ") + fmtNum(limiteSession) + " Ariary."};
         solde -= montant;
-        cout << "[OK] Retrait de " << montant << " Ar effectue." << endl;
-    }
-
-    // --- METHODE VIRTUELLE : Afficher le type de compte ---
-    // "virtual" permet au polymorphisme de fonctionner.
-    // Chaque classe enfant peut redefinir cette methode.
-    virtual void afficherType() {
-        cout << "Type : Compte Bancaire Standard" << endl;
-    }
-
-    // --- METHODE : Afficher les informations du compte ---
-    void afficherInfo() {
-        cout << "================================" << endl;
-        cout << "  Titulaire : " << titulaire      << endl;
-        cout << "  Solde     : " << solde << " Ar" << endl;
-        afficherType(); // Polymorphisme en action !
-        cout << "================================" << endl;
+        retraitSession += montant;
+        log("RETRAIT", montant);
+        return {true, "- " + fmtNum(montant) + txt(" Ariary debite.", " Ariary nesorina.")};
     }
 };
-
-
-// ================================================================
-// CLASSE ENFANT : CompteEpargne  (HERITAGE)
-// ================================================================
-// CompteEpargne herite de CompteBancaire.
-// Elle ajoute un taux d'interet en plus.
 
 class CompteEpargne : public CompteBancaire {
-
-    // Attribut supplementaire propre au compte epargne
-private:
-    double tauxInteret; // Taux en pourcentage (ex: 3.5 pour 3.5%)
+    double taux;
 
 public:
-
-    // Constructeur de la classe enfant
-    // On appelle d'abord le constructeur du parent avec : CompteBancaire(nom, solde)
-    CompteEpargne(string nom, double soldeInitial, double taux)
-        : CompteBancaire(nom, soldeInitial) {
-        tauxInteret = taux;
-        cout << "[INFO] Taux d'interet : " << tauxInteret << "%" << endl;
+    CompteEpargne(std::string nom, double initial, double taux,
+                  double sMin = 0.0, double limSess = 0.0,
+                  std::string path = "historique.csv")
+        : CompteBancaire(std::move(nom), initial, sMin, limSess, std::move(path)),
+          taux(taux)
+    {
+        if (this->taux < 0.0) throw std::invalid_argument("Taux negatif.");
     }
 
-    // --- METHODE : Appliquer les interets au solde ---
-    void appliquerInterets() {
-        double interets = getSolde() * (tauxInteret / 100.0);
-        deposer(interets);
-        cout << "[OK] Interets de " << interets << " Ar  ajoutes." << endl;
+    std::string getType() const override {
+        std::ostringstream os;
+        os << txt("Compte epargne  (taux : ", "Kaonty fitahirizana (") << taux << "%)";
+        return os.str();
     }
 
-    // --- POLYMORPHISME : On redefinit afficherType() ---
-    // Cette version remplace celle du parent pour ce type de compte.
-    void afficherType() override {
-        cout << "Type : Compte Epargne (Taux: " << tauxInteret << "%)" << endl;
+    OpResult appliquerInterets() {
+        return deposer(getSolde() * taux / 100.0, "INTERET");
     }
 };
 
+struct Status { std::string msg; bool err = false; };
 
-// ================================================================
-// PROGRAMME PRINCIPAL
-// ================================================================
-int main() {
+static void waitEnter() {
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::cin.get();
+}
 
-    cout << "============================================" << endl;
-    cout << "   BIENVENUE AU SYSTEME ATM - POO C++      " << endl;
-    cout << "============================================" << endl;
+static double readAmount(const std::string& prompt) {
+    double v;
+    while (true) {
+        std::cout << "\n" << ansi::yel << "> " << ansi::rst << prompt;
+        if (std::cin >> v) return v;
+        std::cout << txt("Valeur invalide, reessayez.\n", "Tsy mety ny sanda, andramo indray.\n");
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+}
 
-    // Creation d'un objet CompteEpargne
-    // Le constructeur est appele ici automatiquement.
-    CompteEpargne monCompte("Aro", 50000.0, 3.5);
+static void showMenu(const CompteEpargne& c, const Status& st = {}) {
+    cls();
+    top();
+    cRow(txt("SYSTEME ATM  v1.0", "RAFI-BOLA ATM  v1.0"), ansi::bold + ansi::cyn);
+    sep();
+    row(" " + txt("Titulaire : ", "Tompon-kaonty : ") + c.getTitulaire());
+    row(" " + txt("Solde     : ", "Ambiny        : ")
+            + ansi::grn + ansi::bold + fmtNum(c.getSolde()) + " Ariary" + ansi::rst);
+    row(" " + txt("Compte    : ", "Kaonty        : ") + c.getType());
+    if (c.getLimiteSession() > 0.0)
+        row(" " + txt("Session   : ", "Fotoana       : ")
+                + fmtNum(c.getRetraitSession()) + " / " + fmtNum(c.getLimiteSession()) + " Ariary");
+    sep();
+    row("  " + txt("[1] Infos        [2] Depot        [3] Retrait",
+                   "[1] Fampahalalana  [2] Ampiditra   [3] Nesorana"));
+    row("  " + txt("[4] Interets     [5] Historique   [6] Quitter",
+                   "[4] Zanabola     [5] Tantara      [6] Hiala   "));
+    sep();
+    row("  " + st.msg, st.err ? ansi::red : ansi::grn);
+    bot();
+    std::cout << "\n" << ansi::yel << "> " << txt("Votre choix : ", "Safidio : ") << ansi::rst;
+}
 
-    cout << endl;
+static void showInfo(const CompteEpargne& c) {
+    cls();
+    top();
+    cRow(txt("DETAILS DU COMPTE", "ANTSIPIRIHANA NY KAONTY"), ansi::bold + ansi::cyn);
+    sep();
+    row(" " + txt("Titulaire    : ", "Tompon-kaonty : ") + c.getTitulaire());
+    row(" " + txt("Solde        : ", "Ambiny        : ")
+            + ansi::grn + ansi::bold + fmtNum(c.getSolde()) + " Ariary" + ansi::rst);
+    row(" " + txt("Solde min    : ", "Ambiny kely   : ") + fmtNum(c.getSoldeMin()) + " Ariary");
+    row(" " + txt("Type         : ", "Kaonty        : ") + c.getType());
+    if (c.getLimiteSession() > 0.0)
+        row(" " + txt("Plafond sess : ", "Fetra fotoana : ")
+                + fmtNum(c.getRetraitSession()) + " / " + fmtNum(c.getLimiteSession()) + " Ariary");
+    sep();
+    row("  " + txt("[ Entree pour revenir ]", "[ Entree hanohy ]"), ansi::yel);
+    bot();
+    waitEnter();
+}
 
-    int choix;
-    bool continuer = true;
-
-    // Boucle principale du menu ATM
-    while (continuer) {
-
-        cout << "\n-------- MENU ATM --------" << endl;
-        cout << " 1. Voir mes informations  " << endl;
-        cout << " 2. Deposer de l'argent    " << endl;
-        cout << " 3. Retirer de l'argent    " << endl;
-        cout << " 4. Appliquer les interets " << endl;
-        cout << " 5. Quitter                " << endl;
-        cout << "--------------------------" << endl;
-        cout << "Votre choix : ";
-        cin >> choix;
-
-        switch (choix) {
-
-            case 1:
-                // Affiche les infos + le type (polymorphisme)
-                monCompte.afficherInfo();
-                break;
-
-            case 2: {
-                double montant;
-                cout << "Montant a deposer (Ar) : ";
-                cin >> montant;
-                monCompte.deposer(montant);
-                break;
-            }
-
-            case 3: {
-                double montant;
-                cout << "Montant a retirer (Ar) : ";
-                cin >> montant;
-                monCompte.retirer(montant);
-                break;
-            }
-
-            case 4:
-                // Methode specifique a CompteEpargne (heritage)
-                monCompte.appliquerInterets();
-                break;
-
-            case 5:
-                continuer = false;
-                cout << "\nMerci d'avoir utilise notre ATM. Au revoir !" << endl;
-                break;
-
-            default:
-                cout << "[ERREUR] Choix invalide. Entrez un nombre entre 1 et 5." << endl;
+static void printHistory(const CompteEpargne& c) {
+    cls();
+    top();
+    cRow(txt("HISTORIQUE DES TRANSACTIONS", "TANTARA NY ARA-BOLA"), ansi::bold + ansi::cyn);
+    sep();
+    const auto& hist = c.getHistorique();
+    if (hist.empty()) {
+        row("  " + txt("Aucune transaction enregistree.", "Tsy misy tantara voarakitra."), ansi::yel);
+    } else {
+        row("  " + fit("DATE", 21) + fit("TYPE", 9) + fit("MONTANT", 12) + "SOLDE", ansi::bold);
+        sep();
+        int from = std::max(0, (int)hist.size() - 10);
+        for (int i = from; i < (int)hist.size(); ++i) {
+            const auto& tx = hist[i];
+            const std::string& clr = (tx.type == "RETRAIT") ? ansi::red : ansi::grn;
+            row("  " + fit(tx.date, 21) +
+                       fit(tx.type, 9)  +
+                       fit(fmtNum(tx.montant) + " Ar", 12) +
+                       fmtNum(tx.solde) + " Ariary", clr);
         }
     }
+    sep();
+    row("  " + txt("[ Entree pour revenir ]", "[ Entree hanohy ]"), ansi::yel);
+    bot();
+    waitEnter();
+}
 
-    // Le destructeur est appele automatiquement ici (fin du main)
+int main() {
+    enableAnsi();
+
+    cls();
+    top();
+    cRow("SYSTEME ATM  v1.0", ansi::bold + ansi::cyn);
+    sep();
+    row("  Choisir la langue / Safidy fiteny");
+    row("    1.  Francais");
+    row("    2.  Malagasy");
+    bot();
+    std::cout << "\n" << ansi::yel << "> " << ansi::rst;
+
+    int choixLangue;
+    if (!(std::cin >> choixLangue)) { std::cerr << "Erreur.\n"; return 1; }
+    langueActuelle = (choixLangue == 2) ? 2 : 1;
+
+    try {
+        CompteEpargne compte("Aro", 50000.0, 3.5, 10000.0, 20000.0);
+        Status st;
+        int choix;
+        bool actif = true;
+
+        while (actif) {
+            showMenu(compte, st);
+            st = {};
+
+            if (!(std::cin >> choix)) {
+                std::cin.clear();
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                st = {txt("Entree invalide.", "Tsy mety ny fidirana."), true};
+                continue;
+            }
+
+            switch (choix) {
+                case 1: showInfo(compte); break;
+                case 2: {
+                    auto res = compte.deposer(readAmount(txt("Montant (Ariary) : ", "Vola (Ariary) : ")));
+                    st = {res.msg, !res.ok};
+                    break;
+                }
+                case 3: {
+                    auto res = compte.retirer(readAmount(txt("Montant (Ariary) : ", "Vola (Ariary) : ")));
+                    st = {res.msg, !res.ok};
+                    break;
+                }
+                case 4: { auto res = compte.appliquerInterets(); st = {res.msg, !res.ok}; break; }
+                case 5: printHistory(compte); break;
+                case 6: actif = false; break;
+                default: st = {txt("Choix hors plage (1-6).", "Safidy ivelan'ny faritra (1-6)."), true};
+            }
+        }
+
+        cls();
+        top();
+        row("");
+        cRow(txt("Merci d'avoir utilise notre ATM !", "Misaotra nampiasa ny ATM anay !"), ansi::grn + ansi::bold);
+        cRow(txt("Au revoir !", "Veloma !"), ansi::grn);
+        row("");
+        bot();
+        std::cout << "\n";
+
+    } catch (const std::exception& e) {
+        std::cerr << ansi::red << "Erreur : " << e.what() << ansi::rst << "\n";
+        return 1;
+    }
+
     return 0;
 }
