@@ -4,3 +4,6 @@ build/
 *.user
 .qmake.stash
 *.autosave
+demo/gab
+demo/historique.csv
+demo/carte.txt

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -5,10 +7,15 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
+#include <conio.h>
 #include <windows.h>
+#else
+#include <termios.h>
+#include <unistd.h>
 #endif
 
 namespace ansi {
@@ -221,6 +228,105 @@ static double readAmount(const std::string& prompt) {
     }
 }
 
+//Authentification
+
+static const std::string CARTE_NUM = "4532123456789010";
+static const std::string CARTE_PIN = "1234";
+static const int MAX_ESSAIS = 3;
+
+static std::string stripSpaces(std::string s) {
+    s.erase(std::remove(s.begin(), s.end(), ' '), s.end());
+    return s;
+}
+
+// Lit le PIN en affichant des '*' 
+static std::string readHidden() {
+    std::cout << std::flush;
+    std::string s;
+#ifdef _WIN32
+    int c;
+    while ((c = _getch()) != '\r' && c != '\n') {
+        if (c == 8) {
+            if (!s.empty()) { s.pop_back(); std::cout << "\b \b"; }
+        } else if (c >= 32 && c < 127) {
+            s += static_cast<char>(c);
+            std::cout << '*';
+        }
+        std::cout.flush();
+    }
+#else
+    termios old{};
+    tcgetattr(STDIN_FILENO, &old);
+    termios t = old;
+    t.c_lflag &= ~(ECHO | ICANON);
+    t.c_cc[VMIN]  = 1;
+    t.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+
+    char c;
+    while (read(STDIN_FILENO, &c, 1) == 1 && c != '\n' && c != '\r') {
+        if (c == 127 || c == 8) {
+            if (!s.empty()) { s.pop_back(); std::cout << "\b \b" << std::flush; }
+        } else if (c >= 32 && c < 127) {
+            s += c;
+            std::cout << '*' << std::flush;
+        }
+    }
+    tcsetattr(STDIN_FILENO, TCSANOW, &old);
+#endif
+    std::cout << "\n";
+    return s;
+}
+
+static bool authentifier() {
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::string err;
+
+    for (int essai = 1; essai <= MAX_ESSAIS; ++essai) {
+        cls();
+        top();
+        cRow(txt("AUTHENTIFICATION", "FANAMARINANA"), ansi::bold + ansi::cyn);
+        sep();
+        row("  " + txt("Entrez le numero de carte et votre PIN.",
+                       "Ampidiro ny laharan'ny karatra sy ny PIN."));
+        if (!err.empty()) {
+            sep();
+            row("  " + err, ansi::red);
+        }
+        bot();
+
+        std::cout << "\n" << ansi::yel << "> " << ansi::rst
+                  << txt("Numero de carte : ", "Laharan'ny karatra : ");
+        std::string carte;
+        std::getline(std::cin, carte);
+
+        std::cout << ansi::yel << "> " << ansi::rst
+                  << txt("Code PIN : ", "Kaody PIN : ");
+        std::string pin = readHidden();
+
+        if (!std::cin) return false;
+        if (stripSpaces(carte) == CARTE_NUM && pin == CARTE_PIN) return true;
+
+        err = txt("Carte ou PIN incorrect (", "Diso ny karatra na ny PIN (")
+            + std::to_string(MAX_ESSAIS - essai)
+            + txt(" essai(s) restant(s)).", " ezaka sisa).");
+    }
+    return false;
+}
+
+static void showWelcome(const std::string& nom) {
+    cls();
+    top();
+    row("");
+    cRow(txt("Bienvenue Mr ", "Tonga soa Andriamatoa ") + nom + " !",
+         ansi::grn + ansi::bold);
+    row("");
+    bot();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1800));
+}
+
+// Ecrans 
+
 static void showMenu(const CompteEpargne& c, const Status& st = {}) {
     cls();
     top();
@@ -290,6 +396,8 @@ static void printHistory(const CompteEpargne& c) {
     waitEnter();
 }
 
+//main 
+
 int main() {
     enableAnsi();
 
@@ -309,6 +417,19 @@ int main() {
 
     try {
         CompteEpargne compte("Aro", 50000.0, 3.5, 10000.0, 20000.0);
+
+        if (!authentifier()) {
+            cls();
+            top();
+            row("");
+            cRow(txt("Carte bloquee : trop d'essais.", "Voasakana ny karatra : be loatra ny ezaka."),
+                 ansi::red + ansi::bold);
+            row("");
+            bot();
+            return 1;
+        }
+        showWelcome(compte.getTitulaire());
+
         Status st;
         int choix;
         bool actif = true;
