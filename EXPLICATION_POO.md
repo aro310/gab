@@ -59,7 +59,7 @@ class CompteBancaire {
 };
 
 // CREATION d'un objet (l'exemplaire)
-CompteEpargne monCompte("Ahmed Benali", 50000.0, 3.5);
+CompteEpargne monCompte("Aro", 50000.0, 3.5);
 //             ↑
 //         C'est l'objet !
 ```
